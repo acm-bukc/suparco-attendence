@@ -68,36 +68,44 @@ form.addEventListener("submit", async (event) => {
   showMessage("Submitting attendance...", "pending");
 
   try {
-    let statusChecked = false;
-    try {
-      const beforeStatus = await getAttendanceStatus(enrollment);
-      statusChecked = true;
-      if (!beforeStatus.found) {
-        throw new Error("Enrollment not found.");
-      }
-      if (beforeStatus.attended) {
-        throw new Error("Attendance has already been marked for this enrollment.");
-      }
-    } catch (error) {
-      if (error.message === "Enrollment not found." || error.message === "Attendance has already been marked for this enrollment.") {
-        throw error;
-      }
-    }
-    await fetch(GOOGLE_SHEETS_ENDPOINT, {
+    const attendanceRequest = fetch(GOOGLE_SHEETS_ENDPOINT, {
       method: "POST",
       mode: "no-cors",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ action: "attendance", enrollment })
     });
-    if (statusChecked) {
-      const afterStatus = await getAttendanceStatus(enrollment);
-      if (!afterStatus.attended) {
-        throw new Error("Attendance could not be marked. Please try again.");
-      }
+
+    let status;
+    try {
+      status = await getAttendanceStatus(enrollment);
+    } catch {
+      await attendanceRequest;
+      form.reset();
+      enrollmentField.closest(".field").classList.remove("invalid");
+      showMessage("Attendance request submitted. Please confirm the row turns green in Google Sheets.", "pending");
+      return;
+    }
+
+    if (!status.found) {
+      await attendanceRequest;
+      throw new Error("Enrollment not found.");
+    }
+    if (status.attended) {
+      await attendanceRequest;
+      throw new Error("Attendance has already been marked for this enrollment.");
+    }
+
+    await attendanceRequest;
+    const afterStatus = await getAttendanceStatus(enrollment).catch(() => null);
+    if (!afterStatus || !afterStatus.attended) {
+      form.reset();
+      enrollmentField.closest(".field").classList.remove("invalid");
+      showMessage("Attendance request submitted. Please confirm the row turns green in Google Sheets.", "pending");
+      return;
+    }
+    if (afterStatus.attended) {
       showMessage("Attendance marked successfully.", "success");
       showAttendanceModal();
-    } else {
-      showMessage("Attendance request submitted. Please confirm the row turns green in Google Sheets.", "pending");
     }
     form.reset();
     enrollmentField.closest(".field").classList.remove("invalid");
