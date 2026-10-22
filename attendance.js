@@ -68,12 +68,20 @@ form.addEventListener("submit", async (event) => {
   showMessage("Submitting attendance...", "pending");
 
   try {
-    const beforeStatus = await getAttendanceStatus(enrollment);
-    if (!beforeStatus.found) {
-      throw new Error("Enrollment not found.");
-    }
-    if (beforeStatus.attended) {
-      throw new Error("Attendance has already been marked for this enrollment.");
+    let statusChecked = false;
+    try {
+      const beforeStatus = await getAttendanceStatus(enrollment);
+      statusChecked = true;
+      if (!beforeStatus.found) {
+        throw new Error("Enrollment not found.");
+      }
+      if (beforeStatus.attended) {
+        throw new Error("Attendance has already been marked for this enrollment.");
+      }
+    } catch (error) {
+      if (error.message === "Enrollment not found." || error.message === "Attendance has already been marked for this enrollment.") {
+        throw error;
+      }
     }
     await fetch(GOOGLE_SHEETS_ENDPOINT, {
       method: "POST",
@@ -81,14 +89,18 @@ form.addEventListener("submit", async (event) => {
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ action: "attendance", enrollment })
     });
-    const afterStatus = await getAttendanceStatus(enrollment);
-    if (!afterStatus.attended) {
-      throw new Error("Attendance could not be marked. Please try again.");
+    if (statusChecked) {
+      const afterStatus = await getAttendanceStatus(enrollment);
+      if (!afterStatus.attended) {
+        throw new Error("Attendance could not be marked. Please try again.");
+      }
+      showMessage("Attendance marked successfully.", "success");
+      showAttendanceModal();
+    } else {
+      showMessage("Attendance request submitted. Please confirm the row turns green in Google Sheets.", "pending");
     }
     form.reset();
     enrollmentField.closest(".field").classList.remove("invalid");
-    showMessage("Attendance marked successfully.", "success");
-    showAttendanceModal();
   } catch (error) {
     const errorMessage = error instanceof TypeError && error.message.toLowerCase().includes("fetch")
       ? "Could not connect to the attendance service. Please try again."
